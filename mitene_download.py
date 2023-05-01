@@ -23,6 +23,7 @@ url = main_config['mitene_url']
 password = main_config['mitene_password']
 dl_dir_path = main_config['dl_dir_path']
 dl_wait_time = main_config['dl_wait_time']
+click_wait_time = main_config['click_wait_time']
 
 # ログ設定ファイル読込
 with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
@@ -64,7 +65,7 @@ browser.implicitly_wait(5)
 # オーバーレイ上のボタンをクリックする関数を定義
 def click_on_the_overlay(class_name):
     button = browser.find_element(By.CLASS_NAME, class_name)
-    time.sleep(1)
+    time.sleep(click_wait_time)
     browser.execute_script("arguments[0].click();", button)
 
 # 「みてね」のサイトを開く
@@ -147,63 +148,49 @@ for page in range(1, 10**4, 1):
             # shooting_date は 'MM/DD/YYYY' の形式なので 'YYYY-MM-DD' の形式に変換
             shooting_date = pd.to_datetime(shooting_date, format='%m/%d/%Y').strftime('%Y-%m-%d')
 
-            # ファイル名を取得
-            thumbnail_src = browser.find_element(By.ID, 'media-img').get_attribute('src')
+            # 撮影日がDL対象であればダウンロード
+            if dl_end_date >= pd.to_datetime(shooting_date) >= dl_start_date:
+                logger.info('画像・動画%s枚目 撮影日:%s DL対象', str(movie).zfill(2), shooting_date)
+                logger.info('ダウンロードを開始します.')
 
-            # サムネイルのsrc属性から画像・動画のファイル名を正規表現で抽出
-            filename = shooting_date + '_' + re.search(r'https://[^/]+/media/uploads/[^/]+/([^?]+)', thumbnail_src).group(1)
+                # [ダウンロード]ボタンをクリック
+                click_on_the_overlay('download-button')
 
-            # log filename
-            # logger.info('画像・動画%s枚目 撮影日:%s ファイル名:%s', str(movie).zfill(2), shooting_date, filename)
+                # 1秒毎にダウンロード状況を判定
+                for i in range(dl_wait_time + 1):
 
-            # ../downloads にファイルが存在しない場合はダウンロード
-            if not os.path.exists(dl_dir_path + '/' + filename):
+                    # ダウンロードフォルダ内のファイル一覧を取得
+                    download_files = glob.glob(tmp_dl_dir_path + '/' +'*.*')
 
-                # 撮影日がDL対象であればダウンロード
-                if dl_end_date >= pd.to_datetime(shooting_date) >= dl_start_date:
-                    logger.info('画像・動画%s枚目 撮影日:%s DL対象', str(movie).zfill(2), shooting_date)
-                    logger.info('ダウンロードを開始します.')
+                    if i != 0 and i % 30 == 0:
+                        logger.debug(str(i) + '秒経過')
 
-                    # [ダウンロード]ボタンをクリック
-                    click_on_the_overlay('download-button')
+                    # ファイルが存在する場合
+                    if download_files:
 
-                    # 1秒毎にダウンロード状況を判定
-                    for i in range(dl_wait_time + 1):
+                        # 拡張子を抽出
+                        extension = os.path.splitext(download_files[0])
 
-                        # ダウンロードフォルダ内のファイル一覧を取得
-                        download_files = glob.glob(tmp_dl_dir_path + '/' +'*.*')
+                        # 拡張子が '.crdownload' でなければダウンロード完了、待機を抜ける
+                        if '.crdownload' not in extension[1]:
+                            tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
+                            file_name = os.path.split(tmp_file_path)[1]
+                            new_file_name = shooting_date + '_' + file_name
+                            new_file_path = dl_dir_path + '/' + new_file_name
+                            shutil.move(tmp_file_path, new_file_path)
+                            time.sleep(5)
+                            logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
+                            break
 
-                        if i != 0 and i % 30 == 0:
-                            logger.debug(str(i) + '秒経過')
+                    # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
+                    if i >= dl_wait_time:
+                        logger.error('タイムアウトしました. DLを中断します.')
+                        sys.exit(1)
 
-                        # ファイルが存在する場合
-                        if download_files:
+                    time.sleep(1)
 
-                            # 拡張子を抽出
-                            extension = os.path.splitext(download_files[0])
-
-                            # 拡張子が '.crdownload' でなければダウンロード完了、待機を抜ける
-                            if '.crdownload' not in extension[1]:
-                                tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
-                                file_name = os.path.split(tmp_file_path)[1]
-                                new_file_name = shooting_date + '_' + file_name
-                                new_file_path = dl_dir_path + '/' + new_file_name
-                                shutil.move(tmp_file_path, new_file_path)
-                                time.sleep(5)
-                                logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
-                                break
-
-                        # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
-                        if i >= dl_wait_time:
-                            logger.error('タイムアウトしました. DLを中断します.')
-                            sys.exit(1)
-
-                        time.sleep(1)
-
-                else:
-                    logger.info('画像・動画%s枚目 撮影日:%s DL対象外', str(movie).zfill(2), shooting_date)
             else:
-                logger.info('画像・動画%s枚目 撮影日:%s ファイル名:%s は既にダウンロード済みです.', str(movie).zfill(2), shooting_date, filename)
+                logger.info('画像・動画%s枚目 撮影日:%s DL対象外', str(movie).zfill(2), shooting_date)
 
 
             movie += 1

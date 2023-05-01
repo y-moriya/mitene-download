@@ -2,3 +2,4 @@ mitene_url: 'https://mitene.us/xxxx' # みてねURL（STRING）
 mitene_password: 'xxxxxxxx' # みてねパスワード（STRING）
 dl_dir_path: '/Users/OGAWA_Sanshiro/Desktop/DLフォルダ' # 画像・動画のDL先フォルダ 絶対パス（STRING）
 dl_wait_time: 300 # DL時のタイムアウト設定 秒（INT）
+click_wait_time: 1 # クリック時のタイムアウト設定 秒（INT）

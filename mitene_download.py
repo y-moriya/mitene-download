@@ -11,8 +11,7 @@ import time
 import glob
 import pandas as pd
 import yaml
-import logging
-import re
+import hashlib
 from logging import config, getLogger, StreamHandler, Formatter
 
 # メイン設定ファイル読込
@@ -174,13 +173,22 @@ for page in range(1, 10**4, 1):
                         # 拡張子が '.crdownload' でなければダウンロード完了、待機を抜ける
                         if '.crdownload' not in extension[1]:
                             tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
-                            file_name = os.path.split(tmp_file_path)[1]
-                            new_file_name = shooting_date + '_' + file_name
+                            # ファイルのハッシュを取得
+                            file_hash = hashlib.md5(open(tmp_file_path, 'rb').read()).hexdigest()
+                            new_file_name = shooting_date + '_' + file_hash + extension[1]
                             new_file_path = dl_dir_path + '/' + new_file_name
-                            shutil.move(tmp_file_path, new_file_path)
-                            time.sleep(5)
-                            logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
-                            break
+                            # 既存ファイルが存在する場合はダウンロードしたファイルを削除する
+                            if os.path.exists(new_file_path):
+                                logger.info('既存ファイルが存在します. ファイル名: %s', new_file_name)
+                                os.remove(tmp_file_path)
+                                time.sleep(5)
+                                break
+                            # 既存ファイルが存在しない場合は移動する
+                            else:
+                                shutil.move(tmp_file_path, new_file_path)
+                                time.sleep(5)
+                                logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
+                                break
 
                     # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
                     if i >= dl_wait_time:

@@ -19,3 +19,4 @@ $ python3 ../mitene_download.py YYYY-MM-DD YYYY-MM-DD
 ```
 
 - `pip3 install -r requirements.txt` で必要なライブラリがインストールされます
+- ダウンロードしたファイル名を `日付_MD5HASH.ext` に変更し、同一ファイルがある場合は一時ファイルをそのまま削除するようにした

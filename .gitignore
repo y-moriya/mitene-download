@@ -1,3 +1,5 @@
 .DS_Store
 main_config.yml
 tmp_dl_dir
+downloads
+log.log

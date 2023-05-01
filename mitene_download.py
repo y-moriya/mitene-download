@@ -3,6 +3,7 @@
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 import os
 import sys
 import shutil
@@ -11,10 +12,11 @@ import glob
 import pandas as pd
 import yaml
 import logging
+import re
 from logging import config, getLogger, StreamHandler, Formatter
 
 # メイン設定ファイル読込
-with open('main_config.yml', 'r', encoding='utf-8') as read_main_config:
+with open('../main_config.yml', 'r', encoding='utf-8') as read_main_config:
     main_config = yaml.safe_load(read_main_config)
 
 url = main_config['mitene_url']
@@ -23,7 +25,7 @@ dl_dir_path = main_config['dl_dir_path']
 dl_wait_time = main_config['dl_wait_time']
 
 # ログ設定ファイル読込
-with open('log_config.yml', 'r', encoding='utf-8') as read_log_config:
+with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
     log_config = yaml.safe_load(read_log_config)
 
 config.dictConfig(log_config)
@@ -47,30 +49,11 @@ except ValueError:
 
 # ここに設定ファイルのバリデーションを追加したい
 
-# 一時ダウンロードフォルダ作成
-try:
-    os.mkdir('tmp_dl_dir')
-except FileExistsError:
-    logger.info('一時ダウンロードフォルダが既に存在しています.')
-    files = glob.glob('./tmp_dl_dir/*')
-
-    if len(files) > 0:
-        logger.error('一時ダウンロードフォルダ内にファイルが存在します.全て削除してから再実行してください.')
-        sys.exit(1)
-else:
-    logger.info('一時ダウンロードフォルダを作成しました.')
-
-tmp_dl_dir_path = os.getcwd() + '/tmp_dl_dir'
+tmp_dl_dir_path = os.getcwd()
 logger.info('一時ダウンロードフォルダのパス: %s', tmp_dl_dir_path)
 
 # Chromeオプション設定でダウンロード先を変更
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_experimental_option("prefs", {
-    "download.default_directory": tmp_dl_dir_path,
-    "download.prompt_for_download": False,
-    "download.directory_upgrade": True,
-    "safebrowsing.enabled": True
-})
+chrome_options = Options()
 
 # オプションを適用しヘッドレスモードでChromeを起動
 chrome_options.add_argument('--headless')
@@ -79,9 +62,9 @@ browser = webdriver.Chrome(options=chrome_options)
 browser.implicitly_wait(5)
 
 # オーバーレイ上のボタンをクリックする関数を定義
-def click_on_the_overlay(class_name, waiting_time):
+def click_on_the_overlay(class_name):
     button = browser.find_element(By.CLASS_NAME, class_name)
-    time.sleep(waiting_time)
+    time.sleep(1)
     browser.execute_script("arguments[0].click();", button)
 
 # 「みてね」のサイトを開く
@@ -119,25 +102,26 @@ else:
 for page in range(1, 10**4, 1):
     # ページ内のサムネイルの数を数える
     thumbnails = browser.find_elements(By.CLASS_NAME, 'media-img')
-    time.sleep(1)
 
     # サムネイルをクリックしてオーバーレイを表示
-    click_on_the_overlay('media-img', 1)
+    click_on_the_overlay('media-img')
 
     # ページ内の最大撮影日を取得
     max_date_on_page = browser.find_element(By.CLASS_NAME, 'media-took-at').text
+    max_date_on_page = pd.to_datetime(max_date_on_page, format='%m/%d/%Y').strftime('%Y-%m-%d')
 
     # [<]ボタンをクリック
-    click_on_the_overlay('prev-button', 1)
+    click_on_the_overlay('prev-button')
 
     # ページ内の最小撮影日を取得
     min_date_on_page = browser.find_element(By.CLASS_NAME, 'media-took-at').text
+    min_date_on_page = pd.to_datetime(min_date_on_page, format='%m/%d/%Y').strftime('%Y-%m-%d')
 
     # [x]ボタンをクリック
-    click_on_the_overlay('close-button', 1)
+    click_on_the_overlay('close-button')
 
     logger.info('%sページ目 画像・動画数:%s 撮影日:%sから%s',
-                str(page).zfill(3), str(len(thumbnails)),
+                str(page), str(len(thumbnails)),
                 min_date_on_page, max_date_on_page)
 
     # ページ内にダウンロード対象ページがあるか確認
@@ -153,69 +137,82 @@ for page in range(1, 10**4, 1):
         logger.info('ページ内からDL対象期間に撮影された画像・動画を検索します.')
 
         # サムネイルをクリックしてオーバーレイを表示
-        click_on_the_overlay('media-img', 1)
+        click_on_the_overlay('media-img')
 
         for movie in range(1, len(thumbnails) + 1, 1):
 
             # 撮影日を取得
             shooting_date = browser.find_element(By.CLASS_NAME, 'media-took-at').text
 
-            # 撮影日がDL対象であればダウンロード
-            if dl_end_date >= pd.to_datetime(shooting_date) >= dl_start_date:
-                logger.info('画像・動画%s枚目 撮影日:%s DL対象', str(movie).zfill(2), shooting_date)
-                logger.info('ダウンロードを開始します.')
+            # shooting_date は 'MM/DD/YYYY' の形式なので 'YYYY-MM-DD' の形式に変換
+            shooting_date = pd.to_datetime(shooting_date, format='%m/%d/%Y').strftime('%Y-%m-%d')
 
-                # [ダウンロード]ボタンをクリック
-                # click_on_the_overlay('download-button', 5)
-                button = browser.find_element(By.CLASS_NAME, 'download-button')
-                button.click()
+            # ファイル名を取得
+            thumbnail_src = browser.find_element(By.ID, 'media-img').get_attribute('src')
 
-                # 1秒毎にダウンロード状況を判定
-                for i in range(dl_wait_time + 1):
+            # サムネイルのsrc属性から画像・動画のファイル名を正規表現で抽出
+            filename = shooting_date + '_' + re.search(r'https://[^/]+/media/uploads/[^/]+/([^?]+)', thumbnail_src).group(1)
 
-                    # ダウンロードフォルダ内のファイル一覧を取得
-                    download_files = glob.glob(tmp_dl_dir_path + '/' +'*.*')
+            # log filename
+            # logger.info('画像・動画%s枚目 撮影日:%s ファイル名:%s', str(movie).zfill(2), shooting_date, filename)
 
-                    if i != 0 and i % 30 == 0:
-                        logger.debug('ダウンロードファイル一覧: %s', download_files)
-                        logger.debug(str(i) + '秒経過')
+            # ../downloads にファイルが存在しない場合はダウンロード
+            if not os.path.exists(dl_dir_path + '/' + filename):
 
-                    # ファイルが存在する場合
-                    if download_files:
+                # 撮影日がDL対象であればダウンロード
+                if dl_end_date >= pd.to_datetime(shooting_date) >= dl_start_date:
+                    logger.info('画像・動画%s枚目 撮影日:%s DL対象', str(movie).zfill(2), shooting_date)
+                    logger.info('ダウンロードを開始します.')
 
-                        # 拡張子を抽出
-                        extension = os.path.splitext(download_files[0])
+                    # [ダウンロード]ボタンをクリック
+                    click_on_the_overlay('download-button')
 
-                        # 拡張子が '.crdownload' でなければダウンロード完了、待機を抜ける
-                        if '.crdownload' not in extension[1]:
-                            tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
-                            file_name = os.path.split(tmp_file_path)[1]
-                            shooting_date = pd.to_datetime(shooting_date).strftime('%Y-%m-%d')
-                            new_file_name = shooting_date + '_' + file_name
-                            new_file_path = dl_dir_path + '/' + new_file_name
-                            shutil.move(tmp_file_path, new_file_path)
-                            time.sleep(5)
-                            logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
-                            break
+                    # 1秒毎にダウンロード状況を判定
+                    for i in range(dl_wait_time + 1):
 
-                    # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
-                    if i >= dl_wait_time:
-                        logger.error('タイムアウトしました. DLを中断します.')
-                        sys.exit(1)
+                        # ダウンロードフォルダ内のファイル一覧を取得
+                        download_files = glob.glob(tmp_dl_dir_path + '/' +'*.*')
 
-                    time.sleep(1)
+                        if i != 0 and i % 30 == 0:
+                            logger.debug(str(i) + '秒経過')
 
+                        # ファイルが存在する場合
+                        if download_files:
+
+                            # 拡張子を抽出
+                            extension = os.path.splitext(download_files[0])
+
+                            # 拡張子が '.crdownload' でなければダウンロード完了、待機を抜ける
+                            if '.crdownload' not in extension[1]:
+                                tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
+                                file_name = os.path.split(tmp_file_path)[1]
+                                new_file_name = shooting_date + '_' + file_name
+                                new_file_path = dl_dir_path + '/' + new_file_name
+                                shutil.move(tmp_file_path, new_file_path)
+                                time.sleep(5)
+                                logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
+                                break
+
+                        # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
+                        if i >= dl_wait_time:
+                            logger.error('タイムアウトしました. DLを中断します.')
+                            sys.exit(1)
+
+                        time.sleep(1)
+
+                else:
+                    logger.info('画像・動画%s枚目 撮影日:%s DL対象外', str(movie).zfill(2), shooting_date)
             else:
-                logger.info('画像・動画%s枚目 撮影日:%s DL対象外', str(movie).zfill(2), shooting_date)
-                # print('画像・動画' + str(movie).zfill(2) + '枚目 撮影日:' + shooting_date + ' DL対象外')
+                logger.info('画像・動画%s枚目 撮影日:%s ファイル名:%s は既にダウンロード済みです.', str(movie).zfill(2), shooting_date, filename)
+
 
             movie += 1
 
             # [>]ボタンをクリック
-            click_on_the_overlay('next-button', 1)
+            click_on_the_overlay('next-button')
 
         # [x]ボタンをクリック
-        click_on_the_overlay('close-button', 1)
+        click_on_the_overlay('close-button')
 
     # [次へ]ボタンが有効か無効か判定
     next_btn = browser.find_element(By.CLASS_NAME, 'next')
@@ -226,8 +223,8 @@ for page in range(1, 10**4, 1):
     if next_btn_tag_a_attr_value == 'follower-paging-next-link':
         logger.info('次のページに遷移します.')
         next_button = browser.find_element(By.CLASS_NAME, 'follower-paging-next-link')
-        time.sleep(1)
         next_button.click()
+        time.sleep(1)
 
     #無効なら処理終了
     else:

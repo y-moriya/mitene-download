@@ -1,3 +1,5 @@
+forked from https://github.com/OGAWASanshiro/mitene-download
+
 # mitene-download
 [みてね](https://mitene.us/)ブラウザ版から写真・動画ファイルを自動でダウンロードできるプログラムです。<br>
 写真・動画の撮影日を指定してダウンロードすることができます。

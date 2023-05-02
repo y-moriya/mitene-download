@@ -12,7 +12,7 @@ import glob
 import pandas as pd
 import yaml
 import hashlib
-from logging import config, getLogger, StreamHandler, Formatter
+from logging import config, getLogger
 
 # メイン設定ファイル読込
 with open('../main_config.yml', 'r', encoding='utf-8') as read_main_config:
@@ -23,6 +23,7 @@ password = main_config['mitene_password']
 dl_dir_path = main_config['dl_dir_path']
 dl_wait_time = main_config['dl_wait_time']
 click_wait_time = main_config['click_wait_time']
+last_downloaded_date_file = main_config['last_downloaded']
 
 # ログ設定ファイル読込
 with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
@@ -31,21 +32,47 @@ with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
 config.dictConfig(log_config)
 logger = getLogger('logger')
 
-# 実行時引数からdl_start_dateとdl_end_dateを取得
+# 引数を取得
 args = sys.argv
-# 引数が2つでない場合はエラーを出力して終了
-if len(args) != 3:
-    logger.error('引数の数が正しくありません. 2つの引数を指定してください.')
+
+# 引数が2つある場合
+if len(args) == 3:
+    # 実行時引数からdl_start_dateとdl_end_dateを取得
+    # 引数が日付形式でない場合はエラーを出力して終了
+    try:
+        dl_start_date = pd.to_datetime(args[1])
+        dl_end_date = pd.to_datetime(args[2])
+    except ValueError:
+        logger.error('日付形式が正しくありません. YYYY-MM-DDの形式で入力してください.')
+        sys.exit(1)
+
+# 引数がなく、last_downloaded_date.txt がない場合
+elif len(args) == 1 and not os.path.exists(last_downloaded_date_file):
+    # エラーを出力して終了
+    logger.error('引数がありません. YYYY-MM-DDの形式で入力してください.')
     sys.exit(1)
 
-# 引数が日付形式でない場合はエラーを出力して終了
-try:
-    dl_start_date = pd.to_datetime(args[1])
-    dl_end_date = pd.to_datetime(args[2])
-except ValueError:
-    logger.error('日付形式が正しくありません. YYYY-MM-DDの形式で入力してください.')
+# 引数がなく、last_downloaded_date.txt がある場合
+elif len(args) == 1 and os.path.exists(last_downloaded_date_file):
+    # last_downloaded_date.txt の内容を読み込む
+    with open(last_downloaded_date_file, 'r') as f:
+        # ファイル内容から日付を取得
+        # dl_end_date は今日の日付
+        try:
+            dl_start_date = pd.to_datetime(f.read())
+            dl_end_date = pd.to_datetime('today')
+        # ファイル内容が日付形式でない場合はエラーを出力して終了
+        except ValueError:
+            logger.error('last_downloaded_date.txt の日付形式が正しくありません. YYYY-MM-DDの形式で入力してください.')
+            sys.exit(1)
+# それ以外の場合はエラーを出力して終了
+else:
+    logger.error('last_downloaded_date.txt の読み込み、または引数の読み込みに失敗しました.')
     sys.exit(1)
 
+# ダウンロード開始日と終了日をログに出力
+logger.info('ダウンロード開始日: %s', dl_start_date.strftime('%Y-%m-%d'))
+logger.info('ダウンロード終了日: %s', dl_end_date.strftime('%Y-%m-%d'))
 
 # ここに設定ファイルのバリデーションを追加したい
 
@@ -175,19 +202,25 @@ for page in range(1, 10**4, 1):
                             tmp_file_path = glob.glob(tmp_dl_dir_path + "/" +"*.*")[0]
                             # ファイルのハッシュを取得
                             file_hash = hashlib.md5(open(tmp_file_path, 'rb').read()).hexdigest()
-                            new_file_name = shooting_date + '_' + file_hash + extension[1]
-                            new_file_path = dl_dir_path + '/' + new_file_name
-                            # 既存ファイルが存在する場合はダウンロードしたファイルを削除する
-                            if os.path.exists(new_file_path):
-                                logger.info('既存ファイルが存在します. ファイル名: %s', new_file_name)
+                            # ダウンロードフォルダにあるhash_list.txtを読み込む
+                            with open(dl_dir_path + '/hash_list.txt', 'r') as f:
+                                hash_list = f.read().splitlines()
+                            # ハッシュリストにハッシュが存在する場合はダウンロードしたファイルを削除する
+                            if file_hash in hash_list:
+                                logger.info('既存ファイルが存在するため、一時保存フォルダから削除します. ハッシュ: %s', file_hash)
                                 os.remove(tmp_file_path)
                                 time.sleep(5)
                                 break
-                            # 既存ファイルが存在しない場合は移動する
+                            # ハッシュリストにハッシュが存在しない場合はハッシュリストに追加し、ファイルを移動する
                             else:
+                                with open(dl_dir_path + '/hash_list.txt', 'a') as f:
+                                    f.write(file_hash + '\n')
+
+                                new_file_name = shooting_date + '_' + file_hash + extension[1]
+                                new_file_path = dl_dir_path + '/' + new_file_name
                                 shutil.move(tmp_file_path, new_file_path)
-                                time.sleep(5)
                                 logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
+                                time.sleep(5)
                                 break
 
                     # 待機時間を過ぎても'.crdownload'以外の拡張子ファイルが確認できない場合は強制処理終了
@@ -226,3 +259,11 @@ for page in range(1, 10**4, 1):
         logger.info('このページが最終ページです.')
         logger.info('処理を終了します.')
         break
+
+# ブラウザを閉じる
+browser.close()
+browser.quit()
+
+# last_downloaded_date_file に最終DL日を書き込む
+with open(last_downloaded_date_file, 'w') as f:
+    f.write(dl_end_date.strftime('%Y-%m-%d'))

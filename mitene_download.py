@@ -267,3 +267,6 @@ browser.quit()
 # last_downloaded_date_file に最終DL日を書き込む
 with open(last_downloaded_date_file, 'w') as f:
     f.write(dl_end_date.strftime('%Y-%m-%d'))
+
+logger.info('処理が完了しました.')
+sys.exit(0)

@@ -24,3 +24,19 @@ $ python3 ../mitene_download.py YYYY-MM-DD YYYY-MM-DD
 - ダウンロードしたファイル名を `日付_MD5HASH.ext` に変更し、同一ファイルがある場合は一時ファイルをそのまま削除するようにした
   - ファイル名に含まれるほか、ダウンロードフォルダに `hash_list.txt` として保存されます
   - `list_hash.py` を実行するとすでにダウンロード済みのファイルに対して全て再計算されます
+
+## upload.py
+
+- DL済みの画像をまとめて Google Photos にアップロードし、アップロード後にローカルからは画像を削除します。
+  - 動画は何もしません。
+- Google Cloud Console でプロジェクトを作成し、Photos Library API の有効化、「デスクトップクライアント」の認証情報を作成し、`client_secrets.json` をダウンロードして root に配置してください。
+-  `main_config.yml` の `upload_album_name` にアップロード先のアルバムを指定してください。
+   -  アルバムが存在しない場合は自動で作成されます。
+   -  このスクリプトから作成したアルバムでないとアップロードができないので注意してください。
+
+Usage
+
+```bash
+$ cd tmp_dl_dir
+$ python3 ../upload.py
+```

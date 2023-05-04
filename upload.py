@@ -67,7 +67,6 @@ def get_album_id(service, album_name):
         albums = response.get("albums", [])
 
         for album in albums:
-            logger.info(album["title"])
             if album["title"] == album_name:
                 album_id = album["id"]
                 logger.info(f"Album '{album_name}', id: '{album_id}' found.")
@@ -78,9 +77,8 @@ def get_album_id(service, album_name):
             break
 
     if not album_id:
-        logger.error(f"Album '{album_name}' not found.")
-        # エラーで終了
-        exit(1)
+        logger.info(f"Album '{album_name}' not found.")
+        return None
 
     else:
         return album_id
@@ -91,6 +89,7 @@ def create_album(service, album_name):
         'album': {'title': album_name}
     }
     response = service.albums().create(body=body).execute()
+    logger.info(f"Album '{album_name}' created.")
     return response.get('id')
 
 # 画像を Google Photos にアップロード
@@ -99,16 +98,12 @@ def upload_image(image_path, album_id):
         upload_token = get_upload_token(image_path)
 
         # create header
-        # POST https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate
-        # Authorization: Bearer oauth2-token
-        # Content-type: application/json
         headers = {
             'Authorization': 'Bearer ' + get_credentials().token,
             'Content-type': 'application/json'
         }
 
         # upload image
-        # POST https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate
         response = requests.post(
             'https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate',
             headers=headers,
@@ -116,7 +111,7 @@ def upload_image(image_path, album_id):
                 'albumId': album_id,
                 'newMediaItems': [
                     {
-                        'description': 'from Yu PC',
+                        'description': 'from upload.py',
                         'simpleMediaItem': {
                             "fileName": image_path,
                             'uploadToken': upload_token
@@ -136,43 +131,49 @@ def upload_image(image_path, album_id):
         response = None
     return response
 
+# 実行
+if __name__ == '__main__':
+    # メイン設定ファイル読込
+    with open('../main_config.yml', 'r', encoding='utf-8') as read_main_config:
+        main_config = yaml.safe_load(read_main_config)
 
-# メイン設定ファイル読込
-with open('../main_config.yml', 'r', encoding='utf-8') as read_main_config:
-    main_config = yaml.safe_load(read_main_config)
+    dl_dir_path = main_config['dl_dir_path']
+    album_name = main_config['upload_album_name']
 
-dl_dir_path = main_config['dl_dir_path']
+    # ログ設定ファイル読込
+    with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
+        log_config = yaml.safe_load(read_log_config)
 
-# ログ設定ファイル読込
-with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
-    log_config = yaml.safe_load(read_log_config)
+    config.dictConfig(log_config)
+    logger = getLogger('logger')
 
-config.dictConfig(log_config)
-logger = getLogger('logger')
+    # 認証済みの API クライアントを作成
+    creds = get_credentials()
+    service = build('photoslibrary', 'v1', credentials=creds,
+                    static_discovery=False)
 
-# 認証済みの API クライアントを作成
-creds = get_credentials()
-service = build('photoslibrary', 'v1', credentials=creds,
-                static_discovery=False)
+    # ファイルの一覧を取得
+    files = os.listdir(dl_dir_path)
 
-# ファイルの一覧を取得
-files = os.listdir(dl_dir_path)
+    # アルバムIDを取得
+    album_id = get_album_id(service, album_name)
 
-# アルバムIDを取得
-album_id = get_album_id(service, 'mago')
+    # アルバムIDが取得できなかった場合、アルバムを作成
+    if album_id is None:
+        album_id = create_album(service, album_name)
 
-# ファイルを Loop
-for file in files:
-    path = f'{dl_dir_path}/{file}'
-    # mimetypes でファイルのMIMETYPEを取得
-    mime_type = mimetypes.guess_type(path)[0]
-    # ファイルのMIMETYPEがNoneTypeではなく、かつ、画像の場合
-    if mime_type is not None and mime_type.startswith('image'):
-        # 画像をアップロード
-        response = upload_image(path, album_id)
-        # アップロードに成功した場合
-        if response is not None:
-            # アップロードしたファイルは削除する
-            os.remove(path)
-    # sleep 1
-    time.sleep(1)
+    # ファイルを Loop
+    for file in files:
+        path = f'{dl_dir_path}/{file}'
+        # mimetypes でファイルのMIMETYPEを取得
+        mime_type = mimetypes.guess_type(path)[0]
+        # ファイルのMIMETYPEがNoneTypeではなく、かつ、画像の場合
+        if mime_type is not None and mime_type.startswith('image'):
+            # 画像をアップロード
+            response = upload_image(path, album_id)
+            # アップロードに成功した場合
+            if response is not None:
+                # アップロードしたファイルは削除する
+                os.remove(path)
+        # sleep 1
+        time.sleep(1)

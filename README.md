@@ -25,6 +25,19 @@ $ python3 ../mitene_download.py YYYY-MM-DD YYYY-MM-DD
   - ファイル名に含まれるほか、ダウンロードフォルダに `hash_list.txt` として保存されます
   - `list_hash.py` を実行するとすでにダウンロード済みのファイルに対して全て再計算されます
 
+## newsfeeds_download.py
+
+近況ページから画像をダウンロードします。すでにダウンロード済みの近況ページはスキップされます。
+
+Usage
+
+```bash
+$ cd tmp_dl_dir
+$ python3 ../newsfeeds_download.py
+```
+
+`--all` オプションを付けると `もっと見る` をクリックして全ての近況について処理を行います。
+
 ## upload.py
 
 - DL済みの画像をまとめて Google Photos にアップロードし、アップロード後にローカルからは画像を削除します。
@@ -33,6 +46,7 @@ $ python3 ../mitene_download.py YYYY-MM-DD YYYY-MM-DD
 -  `main_config.yml` の `upload_album_name` にアップロード先のアルバムを指定してください。
    -  アルバムが存在しない場合は自動で作成されます。
    -  このスクリプトから作成したアルバムでないとアップロードができないので注意してください。
+- 動画ファイルは `main_config.yml` の `video_move_path` に移動します。
 
 Usage
 

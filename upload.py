@@ -5,15 +5,13 @@ from logging import config, getLogger
 import pickle
 import time
 import requests
+import shutil
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.auth.transport.requests import Request
-from googleapiclient.http import MediaFileUpload
 
 # OAuth 2.0 認証
-
-
 def get_credentials():
     creds = None
     token_path = '../token.pickle'
@@ -34,11 +32,6 @@ def get_credentials():
 
 def get_upload_token(image_path):
     # create header
-    # POST https://photoslibrary.googleapis.com/v1/uploads
-    # Authorization: Bearer oauth2-token
-    # Content-type: application/octet-stream
-    # X-Goog-Upload-Content-Type: mime-type
-    # X-Goog-Upload-Protocol: raw
     headers = {
         'Authorization': 'Bearer ' + get_credentials().token,
         'Content-type': 'application/octet-stream',
@@ -47,9 +40,6 @@ def get_upload_token(image_path):
     }
 
     # upload image
-    # POST https://photoslibrary.googleapis.com/v1/uploads
-    # Content-Length: [NUMBER_OF_BYTES_IN_FILE]
-    # [BYTES_OF_FILE_CONTENT]
     image_file = open(image_path, 'rb')
     image_bytes = image_file.read()
     image_file.close()
@@ -139,6 +129,7 @@ if __name__ == '__main__':
 
     dl_dir_path = main_config['dl_dir_path']
     album_name = main_config['upload_album_name']
+    video_move_path = main_config['video_move_path']
 
     # ログ設定ファイル読込
     with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
@@ -175,5 +166,11 @@ if __name__ == '__main__':
             if response is not None:
                 # アップロードしたファイルは削除する
                 os.remove(path)
+        # ファイルのMIMETYPEがNoneTypeではなく、かつ、動画の場合
+        elif mime_type is not None and mime_type.startswith('video'):
+            # D:\Amazon Drive\Amazon Drive\ビデオ に動画を移動
+            shutil.move(path, video_move_path)
+            logger.info(f"Move Success: {path}")
+
         # sleep 1
         time.sleep(1)

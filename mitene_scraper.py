@@ -39,8 +39,6 @@ class MiteneScraper:
         self.browser = webdriver.Chrome(options=chrome_options)
         self.browser.implicitly_wait(5)
 
-        self.is_download_all = (len(sys.argv) == 2 and sys.argv[1] == '--all')
-
         # 「みてね」のサイトを開く
         self.browser.get(self.url)
         self.browser.implicitly_wait(5)
@@ -78,9 +76,9 @@ class MiteneScraper:
         return next_btn_tag_a_attr_value == 'follower-paging-next-link'
 
     # ダウンロードされたファイルを処理する
-    def process_downloaded_file(self, shooting_date):
+    def process_downloaded_file(self, shooting_date, tmp_file_path):
         file_hash = hashlib.md5(
-            open(self.tmp_file_path, 'rb').read()).hexdigest()
+            open(tmp_file_path, 'rb').read()).hexdigest()
 
         with open(self.dl_dir_path + '/hash_list.txt', 'r') as f:
             hash_list = f.read().splitlines()
@@ -88,15 +86,15 @@ class MiteneScraper:
         if file_hash in hash_list:
             self.logger.info(
                 '既存ファイルが存在するため、一時保存フォルダから削除します. ハッシュ: %s', file_hash)
-            os.remove(self.tmp_file_path)
+            os.remove(tmp_file_path)
         else:
             with open(self.dl_dir_path + '/hash_list.txt', 'a') as f:
                 f.write(file_hash + '\n')
 
-            extension = os.path.splitext(self.tmp_file_path)[1]
+            extension = os.path.splitext(tmp_file_path)[1]
             new_file_name = shooting_date + '_' + file_hash + extension
             new_file_path = self.dl_dir_path + '/' + new_file_name
-            shutil.move(self.tmp_file_path, new_file_path)
+            shutil.move(tmp_file_path, new_file_path)
             self.logger.info('ダウンロード完了. ファイル名: %s', new_file_name)
 
         time.sleep(5)
@@ -119,7 +117,7 @@ class MiteneScraper:
                 extension = os.path.splitext(tmp_file_path)[1]
 
                 if '.crdownload' not in extension:
-                    self.process_downloaded_file(shooting_date)
+                    self.process_downloaded_file(shooting_date, tmp_file_path)
                     break
 
             if i >= self.dl_wait_time:
@@ -233,10 +231,21 @@ class MiteneScraper:
         self.browser.get(self.url + '/newsfeeds')
         self.browser.implicitly_wait(5)
 
-        # 全てをダウンロードするフラグが立っている場合は「もっと見る」ボタンが消えるまでクリック
-        if self.is_download_all:
-            self.logger.info('全ての近況をダウンロードします.')
-            self.click_see_more()
+        # ダウンロード対象のニュースフィードIDを取得
+        target_newsfeed_ids = self.get_target_newsfeed_ids()
+
+        if target_newsfeed_ids:
+            for newsfeed_id in target_newsfeed_ids:
+                self.process_newsfeed(newsfeed_id)
+
+    def run_newsfeed_all(self):
+        # 近況ページ newsfeeds を開く
+        self.browser.get(self.url + '/newsfeeds')
+        self.browser.implicitly_wait(5)
+
+        # 全てをダウンロードする場合は「もっと見る」ボタンが消えるまでクリック
+        self.logger.info('全ての近況をダウンロードします.')
+        self.click_see_more()
 
         # ダウンロード対象のニュースフィードIDを取得
         target_newsfeed_ids = self.get_target_newsfeed_ids()
@@ -245,7 +254,71 @@ class MiteneScraper:
             for newsfeed_id in target_newsfeed_ids:
                 self.process_newsfeed(newsfeed_id)
 
+    def run_by_date(self, start_date, end_date):
+        for page in range(1, 10**4, 1):
+            # ページ内のサムネイルの数を数える
+            thumbnails = self.browser.find_elements(By.CLASS_NAME, 'media-img')
+
+            # サムネイルをクリックしてオーバーレイを表示
+            self.click_on_the_overlay('media-img')
+
+            # ページ内の最大撮影日を取得
+            max_date_on_page = self.browser.find_element(By.CLASS_NAME, 'media-took-at').text
+            max_date_on_page = pd.to_datetime(max_date_on_page, format='%m/%d/%Y').strftime('%Y-%m-%d')
+
+            # [<]ボタンをクリック
+            self.click_on_the_overlay('prev-button')
+
+            # ページ内の最小撮影日を取得
+            min_date_on_page = self.browser.find_element(By.CLASS_NAME, 'media-took-at').text
+            min_date_on_page = pd.to_datetime(min_date_on_page, format='%m/%d/%Y').strftime('%Y-%m-%d')
+
+            # [x]ボタンをクリック
+            self.click_on_the_overlay('close-button')
+
+            self.logger.info('%sページ目 画像・動画数:%s 撮影日:%sから%s',
+                        str(page), str(len(thumbnails)),
+                        min_date_on_page, max_date_on_page)
+
+            # ページ内にダウンロード対象ページがあるか確認
+            if start_date > pd.to_datetime(max_date_on_page):
+                self.logger.info('このページ以降の画像・動画は全てDL対象期間外に撮影されたものです.')
+                self.logger.info('処理を終了します.')
+                break
+
+            elif pd.to_datetime(min_date_on_page) > end_date:
+                self.logger.info('DL対象期間に撮影された画像・動画はページ内に存在しません.')
+
+            else:
+                self.logger.info('ページ内からDL対象期間に撮影された画像・動画を検索します.')
+
+                # サムネイルをクリックしてオーバーレイを表示
+                self.click_on_the_overlay('media-img')
+
+                for _ in range(len(thumbnails)):
+                    self.download_and_process_file()
+
+                self.click_on_the_overlay('close-button')
+
+            if self.is_next_button_enabled():
+                self.logger.info('次のページに遷移します.')
+                next_button = self.browser.find_element(
+                    By.CLASS_NAME, 'follower-paging-next-link')
+                next_button.click()
+                time.sleep(1)
+            else:
+                self.logger.info('このページが最終ページです.')
+                self.logger.info('処理を終了します.')
+                break
+
+    def log_info(self, message):
+        self.logger.info(message)
+
+    def log_error(self, message):
+        self.logger.error(message)
+
     def close(self):
+        self.browser.close()
         self.browser.quit()
 
     # For use with the "with" statement

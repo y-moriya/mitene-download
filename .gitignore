@@ -6,3 +6,4 @@ log.log
 last_downloaded_date.txt
 client_secrets.json
 token.pickle
+__pycache__

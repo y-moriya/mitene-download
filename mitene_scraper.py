@@ -80,6 +80,12 @@ class MiteneScraper:
         file_hash = hashlib.md5(
             open(tmp_file_path, 'rb').read()).hexdigest()
 
+        if not os.path.exists(self.dl_dir_path + '/hash_list.txt'):
+            # ファイルが存在しない場合は作成する
+            with open(self.dl_dir_path + '/hash_list.txt', 'w') as f:
+                f.write('')
+            self.logger.info('hash_list.txt を作成しました.')
+
         with open(self.dl_dir_path + '/hash_list.txt', 'r') as f:
             hash_list = f.read().splitlines()
 

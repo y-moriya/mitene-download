@@ -9,6 +9,7 @@ import shutil
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 
 # OAuth 2.0 認証
@@ -139,7 +140,12 @@ if __name__ == '__main__':
     logger = getLogger('logger')
 
     # 認証済みの API クライアントを作成
-    creds = get_credentials()
+    try:
+        creds = get_credentials()
+    except RefreshError as e:
+        print(f"Error refreshing the token: {e}")
+        exit(1)
+
     service = build('photoslibrary', 'v1', credentials=creds,
                     static_discovery=False)
 
@@ -156,21 +162,35 @@ if __name__ == '__main__':
     # ファイルを Loop
     for file in files:
         path = f'{dl_dir_path}/{file}'
-        # mimetypes でファイルのMIMETYPEを取得
+        # 画像と動画を同じ場所にアップロードする場合
+        # # mimetypes でファイルのMIMETYPEを取得
         mime_type = mimetypes.guess_type(path)[0]
-        # ファイルのMIMETYPEがNoneTypeではなく、かつ、画像の場合
-        if mime_type is not None and mime_type.startswith('image'):
-            # 画像をアップロード
+        if mime_type is None:
+            continue
+
+        if mime_type is not None and (mime_type.startswith('image') or mime_type.startswith('video')):
             response = upload_image(path, album_id)
             # アップロードに成功した場合
             if response is not None:
                 # アップロードしたファイルは削除する
                 os.remove(path)
-        # ファイルのMIMETYPEがNoneTypeではなく、かつ、動画の場合
-        elif mime_type is not None and mime_type.startswith('video'):
-            # D:\Amazon Drive\Amazon Drive\ビデオ に動画を移動
-            shutil.move(path, video_move_path)
-            logger.info(f"Move Success: {path}")
+
+        # 画像と動画を別の場所にアップロードする場合
+        # # mimetypes でファイルのMIMETYPEを取得
+        # mime_type = mimetypes.guess_type(path)[0]
+        # # ファイルのMIMETYPEがNoneTypeではなく、かつ、画像の場合
+        # if mime_type is not None and mime_type.startswith('image'):
+        #     # 画像をアップロード
+        #     response = upload_image(path, album_id)
+        #     # アップロードに成功した場合
+        #     if response is not None:
+        #         # アップロードしたファイルは削除する
+        #         os.remove(path)
+        # # ファイルのMIMETYPEがNoneTypeではなく、かつ、動画の場合
+        # elif mime_type is not None and mime_type.startswith('video'):
+        #     # D:\Amazon Drive\Amazon Drive\ビデオ に動画を移動
+        #     shutil.move(path, video_move_path)
+        #     logger.info(f"Move Success: {path}")
 
         # sleep 1
         time.sleep(1)

@@ -24,7 +24,7 @@ def get_credentials():
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file('../client_secrets.json',
-                                                             ['https://www.googleapis.com/auth/photoslibrary'])
+                                                             ['https://www.googleapis.com/auth/photoslibrary.appendonly'])
             creds = flow.run_local_server(port=0)
         with open(token_path, 'wb') as token:
             pickle.dump(creds, token)
@@ -49,38 +49,13 @@ def get_upload_token(image_path):
 
     return response.content.decode('utf-8')
 
-
-def get_album_id(service, album_name):
-    album_id = None
-    next_page_token = None
-    while not album_id:
-        response = service.albums().list(pageSize=50, pageToken=next_page_token).execute()
-        albums = response.get("albums", [])
-
-        for album in albums:
-            if album["title"] == album_name:
-                album_id = album["id"]
-                logger.info(f"Album '{album_name}', id: '{album_id}' found.")
-                break
-
-        next_page_token = response.get("nextPageToken", None)
-        if not next_page_token:
-            break
-
-    if not album_id:
-        logger.info(f"Album '{album_name}' not found.")
-        return None
-
-    else:
-        return album_id
-
 # create album
 def create_album(service, album_name):
     body = {
         'album': {'title': album_name}
     }
     response = service.albums().create(body=body).execute()
-    logger.info(f"Album '{album_name}' created.")
+    logger.info(f"Album '{album_name}', id: '{response.get('id')}' created.")
     return response.get('id')
 
 # 画像を Google Photos にアップロード
@@ -131,6 +106,7 @@ if __name__ == '__main__':
     dl_dir_path = main_config['dl_dir_path']
     album_name = main_config['upload_album_name']
     video_move_path = main_config['video_move_path']
+    album_id = main_config['upload_album_id']
 
     # ログ設定ファイル読込
     with open('../log_config.yml', 'r', encoding='utf-8') as read_log_config:
@@ -152,10 +128,7 @@ if __name__ == '__main__':
     # ファイルの一覧を取得
     files = os.listdir(dl_dir_path)
 
-    # アルバムIDを取得
-    album_id = get_album_id(service, album_name)
-
-    # アルバムIDが取得できなかった場合、アルバムを作成
+    # アルバムIDが定義されていなかった場合、アルバムを作成
     if album_id is None:
         album_id = create_album(service, album_name)
 
@@ -175,22 +148,4 @@ if __name__ == '__main__':
                 # アップロードしたファイルは削除する
                 os.remove(path)
 
-        # 画像と動画を別の場所にアップロードする場合
-        # # mimetypes でファイルのMIMETYPEを取得
-        # mime_type = mimetypes.guess_type(path)[0]
-        # # ファイルのMIMETYPEがNoneTypeではなく、かつ、画像の場合
-        # if mime_type is not None and mime_type.startswith('image'):
-        #     # 画像をアップロード
-        #     response = upload_image(path, album_id)
-        #     # アップロードに成功した場合
-        #     if response is not None:
-        #         # アップロードしたファイルは削除する
-        #         os.remove(path)
-        # # ファイルのMIMETYPEがNoneTypeではなく、かつ、動画の場合
-        # elif mime_type is not None and mime_type.startswith('video'):
-        #     # D:\Amazon Drive\Amazon Drive\ビデオ に動画を移動
-        #     shutil.move(path, video_move_path)
-        #     logger.info(f"Move Success: {path}")
-
-        # sleep 1
         time.sleep(1)

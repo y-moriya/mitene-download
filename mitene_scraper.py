@@ -12,6 +12,9 @@ import yaml
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 class MiteneScraper:
@@ -36,7 +39,12 @@ class MiteneScraper:
         chrome_options = Options()
         chrome_options.add_argument('--headless')
         chrome_options.add_argument('--disable-gpu')
-        self.browser = webdriver.Chrome(options=chrome_options)
+
+        # 一時ダウンロードディレクトリを指定
+        prefs = {'download.default_directory': self.tmp_dl_dir_path}
+        chrome_options.add_experimental_option('prefs', prefs)
+
+        self.browser = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
         self.browser.implicitly_wait(5)
 
         # 「みてね」のサイトを開く
@@ -54,9 +62,20 @@ class MiteneScraper:
 
     # オーバーレイ上のボタンをクリックする関数
     def click_on_the_overlay(self, class_name):
-        button = self.browser.find_element(By.CLASS_NAME, class_name)
-        time.sleep(self.click_wait_time)
-        self.browser.execute_script("arguments[0].click();", button)
+        try:
+            button = self.browser.find_element(By.CLASS_NAME, class_name)
+            # self.logger.debug('button要素: %s', button)
+            # self.logger.debug('buttonのテキスト: %s', button.text)
+            # self.logger.debug('buttonの表示状態: %s', button.is_displayed())
+            # self.logger.debug('buttonの有効状態: %s', button.is_enabled())
+            
+            time.sleep(self.click_wait_time)
+            
+            actions = ActionChains(self.browser)
+            actions.move_to_element(button).click().perform()
+            self.logger.info('buttonをクリックしました: %s', class_name)
+        except Exception as e:
+            self.logger.error('buttonのクリックに失敗しました: %s', e)
 
     # 撮影日を取得する
     def get_shooting_date(self):
@@ -109,6 +128,7 @@ class MiteneScraper:
     def download_and_process_file(self):
         shooting_date = self.get_shooting_date()
         self.logger.info('ダウンロードを開始します.')
+        self.logger.info('撮影日: %s', shooting_date)
 
         self.click_on_the_overlay('download-button')
 
@@ -210,27 +230,32 @@ class MiteneScraper:
         self.browser.get(self.url + '/newsfeeds/' + newsfeed_id)
 
         self.logger.info('newsfeed_id: %s をダウンロードします.', newsfeed_id)
-        self.logger.info('ページ内から画像・動画を検索します.')
 
-        thumbnails = self.browser.find_elements(By.CLASS_NAME, 'media-img')
-        self.click_on_the_overlay('media-img')
+        # 最大ページ数が取得できないため、最終ページまでループする
+        for i in range(1, 10**4, 1):
+            self.logger.info('%sページ目', str(i))
+            self.logger.info('ページ内から画像・動画を検索します.')
 
-        for _ in range(len(thumbnails)):
-            self.download_and_process_file()
+            thumbnails = self.browser.find_elements(By.CLASS_NAME, 'media-img')
+            self.click_on_the_overlay('media-img')
 
-        self.click_on_the_overlay('close-button')
+            for _ in range(len(thumbnails)):
+                self.download_and_process_file()
 
-        if self.is_next_button_enabled():
-            self.logger.info('次のページに遷移します.')
-            next_button = self.browser.find_element(
-                By.CLASS_NAME, 'follower-paging-next-link')
-            next_button.click()
-            time.sleep(1)
-        else:
-            self.logger.info('このページが最終ページです.')
-            self.logger.info('処理を終了します.')
-            with open(self.dl_dir_path + '/newsfeed_id_list.txt', 'a') as f:
-                f.write(newsfeed_id + '\n')
+            self.click_on_the_overlay('close-button')
+
+            if self.is_next_button_enabled():
+                self.logger.info('次のページに遷移します.')
+                next_button = self.browser.find_element(
+                    By.CLASS_NAME, 'follower-paging-next-link')
+                next_button.click()
+                time.sleep(1)
+            else:
+                self.logger.info('このページが最終ページです.')
+                self.logger.info('処理を終了します.')
+                with open(self.dl_dir_path + '/newsfeed_id_list.txt', 'a') as f:
+                    f.write(newsfeed_id + '\n')
+                break
 
     def run_newsfeed(self):
         # 近況ページ newsfeeds を開く

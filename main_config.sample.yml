@@ -4,4 +4,5 @@ dl_dir_path: '' # 画像・動画のDL先フォルダ 絶対パス（STRING）
 dl_wait_time: 300 # DL時のタイムアウト設定 秒（INT）
 click_wait_time: 1 # クリック時のタイムアウト設定 秒（INT）
 upload_album_name: 'mitene' # アップロード先アルバム名（STRING）
+upload_album_id: '' # アップロード先アルバムID（STRING）
 video_move_path: '' # 動画の移動先フォルダ 絶対パス（STRING）
